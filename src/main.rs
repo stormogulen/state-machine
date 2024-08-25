@@ -1,132 +1,37 @@
-use std::marker::PhantomData;
+mod door;
+mod error;
+mod states;
 
-// States
-struct Open;
-struct Closed;
-struct Locked;
-struct Broken;
+use door::Door;
+use error::DoorError;
+use states::{Broken, Closed, Locked, Open};
 
-// Door struct
-struct Door<State> {
-    pin_code: String,
-    _state: PhantomData<State>,
-}
-
-// Trait for actions that can be performed on the door
-trait DoorAction {}
-
-// Implement actions for each state
-impl DoorAction for Open {}
-impl DoorAction for Closed {}
-impl DoorAction for Locked {}
-impl DoorAction for Broken {}
-
-// Door methods
-impl Door<Closed> {
-    fn new(pin_code: String) -> Self {
-        Door {
-            pin_code,
-            _state: PhantomData,
-        }
-    }
-
-    fn lock(self) -> Door<Locked> {
-        println!("Locking the door.");
-        Door {
-            pin_code: self.pin_code,
-            _state: PhantomData,
-        }
-    }
-
-    fn open(self) -> Door<Open> {
-        println!("Opening the door.");
-        Door {
-            pin_code: self.pin_code,
-            _state: PhantomData,
-        }
-    }
-}
-
-impl Door<Locked> {
-    fn unlock(self, entered_pin: &str) -> Result<Door<Closed>, &'static str> {
-        if entered_pin == self.pin_code {
-            println!("Unlocking the door.");
-            Ok(Door {
-                pin_code: self.pin_code,
-                _state: PhantomData,
-            })
-        } else {
-            Err("Incorrect PIN.")
-        }
-    }
-}
-
-impl Door<Open> {
-    fn close(self) -> Door<Closed> {
-        println!("Closing the door.");
-        Door {
-            pin_code: self.pin_code,
-            _state: PhantomData,
-        }
-    }
-
-    fn break_door(self) -> Door<Broken> {
-        println!("The door is now broken.");
-        Door {
-            pin_code: self.pin_code,
-            _state: PhantomData,
-        }
-    }
-}
-
-impl<State: DoorAction + 'static> Door<State> {
-    fn state(&self) -> &'static str {
-        match std::any::TypeId::of::<State>() {
-            t if t == std::any::TypeId::of::<Open>() => "Open",
-            t if t == std::any::TypeId::of::<Closed>() => "Closed",
-            t if t == std::any::TypeId::of::<Locked>() => "Locked",
-            t if t == std::any::TypeId::of::<Broken>() => "Broken",
-            _ => "Unknown",
-        }
-    }
-}
-
-fn main() {
+fn main() -> Result<(), DoorError> {
     let door = Door::new(String::from("1234"));
-    println!("Current state: {}", door.state()); // "Current state: Closed"
+    println!("Initial state: {}", door.state_info());
 
-    let door = door.lock();
-    println!("Current state: {}", door.state()); // "Current state: Locked"
+    let door: Door<Locked> = door.lock();
+    println!("After locking: {}", door.state_info());
 
-    let door = door.unlock("1234").unwrap();
-    println!("Current state: {}", door.state()); // "Current state: Closed"
-}
+    let door: Door<Closed> = door.unlock("1234")?;
+    println!("After unlocking: {}", door.state_info());
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    let door: Door<Open> = door.open();
+    println!("After opening: {}", door.state_info());
 
-    #[test]
-    fn test_door_states() {
-        let door = Door::new(String::from("1234"));
-        assert_eq!(door.state(), "Closed");
+    let door: Door<Closed> = door.close();
+    println!("After closing: {}", door.state_info());
 
-        let door = door.lock();
-        assert_eq!(door.state(), "Locked");
+    let door: Door<Broken> = door.open().break_door("Handle fell off".to_string());
+    println!("After breaking: {}", door.state_info());
 
-        let door = door.unlock("1234").unwrap();
-        assert_eq!(door.state(), "Closed");
-
-        let door = door.open();
-        assert_eq!(door.state(), "Open");
-
-        let door = door.close();
-        assert_eq!(door.state(), "Closed");
+    // Attempt to lock an already locked door (to demonstrate error handling)
+    let door: Door<Locked> = Door::new(String::from("5678")).lock();
+    match door.unlock("wrong_pin") {
+        Ok(_) => println!("This shouldn't happen"),
+        Err(DoorError::IncorrectPin) => println!("Incorrect PIN"),
+        Err(e) => println!("Unexpected error: {:?}", e),
     }
 
-    #[test]
-    fn test_incorrect_pin() {
-        let door = Door::new(String::from("1234")).lock();
-        assert!(door.unlock("4321").is_err());
-    }
+    Ok(())
 }
